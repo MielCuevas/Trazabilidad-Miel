@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tienda de Miel - Compra</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path fill='%23F59E0B' d='M50 95c-16.57 0-30-13.43-30-30 0-13.25 8.5-24.5 20-28.28V10c0-2.76 2.24-5 5-5h10c2.76 0 5 2.24 5 5v26.72c11.5 3.78 20 15.03 20 28.28 0 16.57-13.43 30-30 30z'/></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" xintegrity="sha512-FDcVY+g7vc5CXANbrTSg1K5qLy9dG_WnnTYoM69P3uP0oAnwKVEyFrS2znQeVd4J59S3lDjTeTIOxU4xCBpykw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #FFFBEB; }
+        .card { background-color: white; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); transition: all 0.3s ease-in-out; overflow: hidden; }
+        .card-image { width: 100%; height: 200px; object-fit: cover; background-color: #f3f4f6; }
+        .btn-primary { background-color: #F59E0B; color: white; font-weight: 600; border-radius: 0.5rem; padding: 0.75rem 1.5rem; transition: background-color 0.3s, transform 0.2s; }
+        .btn-primary:hover:not(:disabled) { background-color: #D97706; transform: translateY(-2px); }
+        .btn-primary:disabled { background-color: #FCD34D; cursor: not-allowed; opacity: 0.7; }
+        .btn-secondary { background-color: #6B7280; color: white; }
+        .btn-secondary:hover:not(:disabled) { background-color: #4B5563; }
+        .btn-connect { background-color: #10B981; color: white; }
+        .btn-connect:hover { background-color: #059669; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #F59E0B; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 1rem 2rem; border-radius: 0.5rem; color: white; font-weight: 500; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s, transform 0.3s; }
+        #toast.show { opacity: 1; visibility: visible; transform: translate(-50%, -10px); }
+        #toast.success { background-color: #10B981; }
+        #toast.error { background-color: #EF4444; }
+        .purchase-option { display: grid; grid-template-columns: 1fr 80px; align-items: center; gap: 0.5rem; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 999; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal-content { background: white; padding: 2rem; border-radius: 1rem; max-width: 90%; width: 500px; }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8">
+            <div class="text-center md:text-left mb-4 md:mb-0">
+                <h1 class="text-4xl font-bold text-amber-600">Tienda de Miel</h1>
+                <p class="text-gray-500">Compra miel de Cuevas de San Clemente con trazabilidad en la blockchain</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="tokenSelectorContainer" class="hidden">
+                    <label for="tokenSelector" class="sr-only">Seleccionar Token</label>
+                    <select id="tokenSelector" class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-amber-500 focus:border-amber-500 block w-full p-2.5">
+                        <option value="ETH">ETH</option>
+                        <option value="MATIC" selected>MATIC</option>
+                        <!-- CAMBIO: Nuevos tokens añadidos -->
+                        <option value="POL">POL</option>
+                        <option value="USDC">USDC</option>
+                        <option value="USDT">USDT</option>
+                    </select>
+                </div>
+                <div id="wallet-info" class="text-center">
+                    <button id="connectButton" class="btn-primary btn-connect">Conectar Wallet</button>
+                    <div id="userInfo" class="hidden items-center gap-3 text-sm">
+                        <p class="font-medium bg-green-100 text-green-800 rounded-full px-4 py-1" id="userAddress"></p>
+                        <button id="disconnectButton" title="Desconectar Wallet" class="text-gray-500 hover:text-red-600 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Banner de Estado del Contrato -->
+        <div id="contractStatusBanner" class="hidden text-center p-3 mb-6 rounded-lg font-semibold text-white"></div>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2">
+                <h2 class="text-3xl font-bold mb-4">Lotes en Venta</h2>
+                <div id="lotesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <p id="noLotes" class="md:col-span-2 text-gray-500 text-center py-16">Conecta tu wallet para ver los lotes disponibles.</p>
+                </div>
+            </div>
+            <div class="lg:col-span-1 card p-6">
+                <h2 class="text-2xl font-bold mb-4">Últimas Compras</h2>
+                <div id="purchasesLoader" class="flex justify-center items-center py-8"><div class="loader"></div></div>
+                <div id="purchasesList" class="space-y-4 max-h-[40rem] overflow-y-auto pr-2">
+                    <p id="noPurchases" class="text-gray-500 text-center hidden">Aún no se han realizado compras.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Genérico -->
+    <div id="modal" class="modal-overlay">
+        <div id="modalContent" class="modal-content"></div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module">
+        const contractAddress = "0x9099b9E6AbB01E4b0327D6CF19b3896557588C4d";
+        const contractABI = [{"inputs":[{"internalType":"uint256","name":"_loteId","type":"uint256"},{"internalType":"uint256","name":"_kilosAComprar","type":"uint256"}],"name":"comprarKilos","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"string","name":"_informeNFT","type":"string"},{"internalType":"string","name":"_datosLoteJSON","type":"string"},{"internalType":"uint256","name":"_kilosIniciales","type":"uint256"}],"name":"createLote","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"loteId","type":"uint256"},{"indexed":true,"internalType":"address","name":"propietario","type":"address"},{"indexed":false,"internalType":"uint256","name":"kilos","type":"uint256"}],"name":"LoteCreado","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"loteId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"precioPorKilo","type":"uint256"}],"name":"LotePuestoEnVenta","type":"event"},{"inputs":[],"name":"pause","outputs":[],"stateMutability":"nonpayable","type":"function"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Paused","type":"event"},{"inputs":[{"internalType":"uint256","name":"_loteId","type":"uint256"},{"internalType":"uint256","name":"_precioPorKilo","type":"uint256"}],"name":"ponerLoteEnVenta","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"unpause","outputs":[],"stateMutability":"nonpayable","type":"function"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Unpaused","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"ventaId","type":"uint256"},{"indexed":true,"internalType":"uint256","name":"loteId","type":"uint256"},{"indexed":true,"internalType":"address","name":"comprador","type":"address"},{"indexed":false,"internalType":"uint256","name":"kilosComprados","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"costeTotal","type":"uint256"}],"name":"VentaRegistrada","type":"event"},{"inputs":[{"internalType":"uint256","name":"_loteId","type":"uint256"}],"name":"getLoteDetails","outputs":[{"components":[{"internalType":"uint256","name":"id","type":"uint256"},{"internalType":"uint256","name":"kilosIniciales","type":"uint256"},{"internalType":"uint256","name":"kilosRestantes","type":"uint256"},{"internalType":"string","name":"informeNFT","type":"string"},{"internalType":"string","name":"datosLoteJSON","type":"string"},{"internalType":"address","name":"propietario","type":"address"},{"internalType":"bool","name":"existe","type":"bool"},{"internalType":"bool","name":"enVenta","type":"bool"},{"internalType":"uint256","name":"precioPorKilo","type":"uint256"}],"internalType":"struct TrazabilidadMielVenta.LoteMaestro","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getTotalLotes","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"lotes","outputs":[{"internalType":"uint256","name":"id","type":"uint256"},{"internalType":"uint256","name":"kilosIniciales","type":"uint256"},{"internalType":"uint256","name":"kilosRestantes","type":"uint256"},{"internalType":"string","name":"informeNFT","type":"string"},{"internalType":"string","name":"datosLoteJSON","type":"string"},{"internalType":"address","name":"propietario","type":"address"},{"internalType":"bool","name":"existe","type":"bool"},{"internalType":"bool","name":"enVenta","type":"bool"},{"internalType":"uint256","name":"precioPorKilo","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"paused","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"ventas","outputs":[{"internalType":"uint256","name":"ventaId","type":"uint256"},{"internalType":"uint256","name":"loteId","type":"uint256"},{"internalType":"uint256","name":"kilosComprados","type":"uint256"},{"internalType":"uint256","name":"costeTotal","type":"uint256"},{"internalType":"address","name":"comprador","type":"address"},{"internalType":"string","name":"datosVentaJSON","type":"string"}],"stateMutability":"view","type":"function"}];
+        // CAMBIO: Nuevas tasas de cambio añadidas
+        const exchangeRates = { ETH: 3250.50, MATIC: 0.65, POL: 0.65, USDC: 0.93, USDT: 0.93 };
+        let provider, signer, contract;
+        let contractIsPaused = false;
+        
+        const connectButton = document.getElementById('connectButton');
+        const userInfo = document.getElementById('userInfo');
+        const userAddress = document.getElementById('userAddress');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const lotesContainer = document.getElementById('lotesContainer');
+        const purchasesList = document.getElementById('purchasesList');
+        const purchasesLoader = document.getElementById('purchasesLoader');
+        const noPurchases = document.getElementById('noPurchases');
+        const toast = document.getElementById('toast');
+        const tokenSelectorContainer = document.getElementById('tokenSelectorContainer');
+        const tokenSelector = document.getElementById('tokenSelector');
+        const modal = document.getElementById('modal');
+        const modalContent = document.getElementById('modalContent');
+        const contractStatusBanner = document.getElementById('contractStatusBanner');
+        const { jsPDF } = window.jspdf;
+
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.className = ``;
+            toast.classList.add('show', type);
+            setTimeout(() => { toast.classList.remove('show'); }, 4000);
+        }
+
+        async function connectWallet() {
+            if (typeof window.ethereum === 'undefined') return showToast("MetaMask no está instalado.", "error");
+            try {
+                if (typeof ethers === 'undefined') return showToast("Error: La librería Ethers.js no se cargó.", "error");
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                signer = provider.getSigner();
+                contract = new ethers.Contract(contractAddress, contractABI, signer);
+                const address = await signer.getAddress();
+                
+                await checkContractStatus();
+                updateUIOnConnect(address);
+                await loadLotesEnVenta();
+                await loadPastPurchases();
+                listenForNewPurchases();
+            } catch (error) {
+                console.error("Error conectando la wallet:", error);
+                showToast("Error al conectar la wallet.", "error");
+                updateUIOnDisconnect();
+            }
+        }
+
+        function disconnectWallet() {
+            provider = null;
+            signer = null;
+            if(contract) {
+                contract.removeAllListeners();
+            }
+            contract = null;
+            updateUIOnDisconnect();
+            showToast("Wallet desconectada.", "success");
+        }
+        
+        function updateUIOnConnect(address) {
+            connectButton.style.display = 'none';
+            userInfo.style.display = 'flex';
+            tokenSelectorContainer.style.display = 'block';
+            userAddress.textContent = `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+        }
+
+        function updateUIOnDisconnect() {
+            connectButton.style.display = 'block';
+            userInfo.style.display = 'none';
+            tokenSelectorContainer.style.display = 'none';
+            contractStatusBanner.classList.add('hidden');
+            lotesContainer.innerHTML = `<p class="md:col-span-2 text-gray-500 text-center py-16">Conecta tu wallet para ver los lotes disponibles.</p>`;
+            purchasesList.innerHTML = '';
+            noPurchases.textContent = 'Aún no se han realizado compras.';
+            noPurchases.style.display = 'block';
+        }
+
+        async function checkContractStatus() {
+            try {
+                contractIsPaused = await contract.paused();
+                if (contractIsPaused) {
+                    contractStatusBanner.textContent = "Contrato en Pausa: Las compras están deshabilitadas temporalmente.";
+                    contractStatusBanner.className = "block text-center p-3 mb-6 rounded-lg font-semibold bg-red-600 text-white";
+                } else {
+                    contractStatusBanner.textContent = "Contrato Activo: ¡Listo para comprar!";
+                    contractStatusBanner.className = "block text-center p-3 mb-6 rounded-lg font-semibold bg-green-600 text-white";
+                }
+            } catch (error) {
+                console.error("Error al verificar el estado del contrato:", error);
+                contractStatusBanner.textContent = "No se pudo verificar el estado del contrato.";
+                contractStatusBanner.className = "block text-center p-3 mb-6 rounded-lg font-semibold bg-yellow-500 text-white";
+            }
+        }
+
+        async function loadLotesEnVenta() {
+            lotesContainer.innerHTML = `<div class="md:col-span-2 flex justify-center items-center py-16"><div class="loader"></div></div>`;
+            try {
+                const totalLotes = await contract.getTotalLotes();
+                if (totalLotes.toNumber() === 0) {
+                    lotesContainer.innerHTML = `<p class="md:col-span-2 text-gray-500 text-center py-16">No se han creado lotes en este contrato todavía.</p>`;
+                    return;
+                }
+                const lotesPromises = Array.from({ length: totalLotes.toNumber() }, (_, i) => contract.lotes(i + 1));
+                const allLotes = await Promise.all(lotesPromises);
+                lotesContainer.innerHTML = '';
+                const lotesEnVenta = allLotes.filter(lote => lote.existe && lote.enVenta && lote.kilosRestantes > 0);
+                if (lotesEnVenta.length === 0) {
+                    lotesContainer.innerHTML = `<p class="md:col-span-2 text-gray-500 text-center py-16">No hay lotes en venta en este momento.</p>`;
+                } else {
+                    lotesEnVenta.forEach(displayLoteCard);
+                }
+            } catch (error) {
+                console.error("Error cargando lotes:", error);
+                lotesContainer.innerHTML = `<p class="md:col-span-2 text-red-500 text-center py-16">Error al cargar los lotes.</p>`;
+            }
+        }
+
+        function displayLoteCard(lote) {
+            const loteId = lote.id.toNumber();
+            const loteCard = document.createElement('div');
+            loteCard.className = 'card flex flex-col';
+            loteCard.id = `lote-${loteId}`;
+            
+            const ipfsGateway = "https://ipfs.io/ipfs/";
+            const imageUrl = lote.informeNFT.startsWith('ipfs://') 
+                ? lote.informeNFT.replace('ipfs://', ipfsGateway)
+                : (lote.informeNFT ? `${ipfsGateway}${lote.informeNFT}` : '');
+            const placeholderImage = `https://placehold.co/600x400/FFFBEB/F59E0B?text=Lote+${loteId}`;
+
+            const selectedToken = tokenSelector.value;
+            const rate = exchangeRates[selectedToken];
+            const precioPorKiloEth = ethers.utils.formatEther(lote.precioPorKilo);
+            const precioPorKiloEur = (precioPorKiloEth * rate).toFixed(2);
+
+            loteCard.innerHTML = `
+                <img src="${imageUrl || placeholderImage}" alt="Imagen del Lote #${loteId}" class="card-image" data-ipfs-src="${imageUrl}" onerror="this.onerror=null;this.src='${placeholderImage}';">
+                <div class="p-6 flex flex-col flex-grow">
+                    <h3 class="text-2xl font-bold text-amber-600">Lote #${loteId}</h3>
+                    <div class="mt-4 space-y-2 text-gray-700 flex-grow">
+                        <div class="flex justify-between"><span>Kilos Disponibles:</span> <strong id="kilos-restantes-${loteId}" class="text-lg">${lote.kilosRestantes.toNumber()} Kg</strong></div>
+                        <div class="flex justify-between"><span>Precio por Kilo:</span> <strong id="precio-kilo-${loteId}" class="text-lg">${parseFloat(precioPorKiloEth).toFixed(4)} ${selectedToken} (~${precioPorKiloEur}€)</strong></div>
+                    </div>
+                    <div class="mt-6 space-y-3">
+                        <div class="purchase-option"><label for="tarro-1kg-${loteId}">Tarro de 1kg</label><input type="number" id="tarro-1kg-${loteId}" min="0" data-kilos="1" class="purchase-input w-full p-2 border border-gray-300 rounded-md" placeholder="0"></div>
+                        <div class="purchase-option"><label for="caja-6kg-${loteId}">Caja de 6 Tarros (6kg)</label><input type="number" id="caja-6kg-${loteId}" min="0" data-kilos="6" class="purchase-input w-full p-2 border border-gray-300 rounded-md" placeholder="0"></div>
+                        <div class="purchase-option"><label for="caja-12kg-${loteId}">Caja de 12 Tarros (12kg)</label><input type="number" id="caja-12kg-${loteId}" min="0" data-kilos="12" class="purchase-input w-full p-2 border border-gray-300 rounded-md" placeholder="0"></div>
+                    </div>
+                    <div id="stock-warning-${loteId}" class="mt-4 text-red-600 font-bold text-center hidden">¡Stock insuficiente!</div>
+                    <div class="mt-4 p-3 bg-gray-100 rounded-md text-center">
+                        <div class="text-gray-600 font-medium">Coste Total (<span id="total-kilos-${loteId}">0</span> Kg)</div>
+                        <div id="costo-total-${loteId}" class="font-bold text-xl text-gray-800">0.00 ${selectedToken}</div>
+                        <div id="costo-total-eur-${loteId}" class="text-sm text-gray-500">~0.00€</div>
+                    </div>
+                    <button class="buy-button mt-4 w-full btn-primary" data-lote-id="${loteId}" data-precio-kilo-wei="${lote.precioPorKilo.toString()}" data-kilos-restantes="${lote.kilosRestantes.toNumber()}" disabled>Selecciona una cantidad</button>
+                </div>
+            `;
+            lotesContainer.appendChild(loteCard);
+
+            loteCard.querySelectorAll('.purchase-input').forEach(input => {
+                input.addEventListener('input', () => updateTotalCost(loteId));
+            });
+            updateTotalCost(loteId); // Initial check for paused state
+        }
+
+        function updateTotalCost(loteId) {
+            const card = document.getElementById(`lote-${loteId}`);
+            if (!card) return;
+            const totalKilosEl = card.querySelector(`#total-kilos-${loteId}`);
+            const costoTotalEl = card.querySelector(`#costo-total-${loteId}`);
+            const costoTotalEurEl = card.querySelector(`#costo-total-eur-${loteId}`);
+            const stockWarningEl = card.querySelector(`#stock-warning-${loteId}`);
+            const buyButton = card.querySelector('.buy-button');
+
+            const tarro1kg = parseInt(card.querySelector(`#tarro-1kg-${loteId}`).value, 10) || 0;
+            const caja6kg = parseInt(card.querySelector(`#caja-6kg-${loteId}`).value, 10) || 0;
+            const caja12kg = parseInt(card.querySelector(`#caja-12kg-${loteId}`).value, 10) || 0;
+            
+            const totalKilos = (tarro1kg * 1) + (caja6kg * 6) + (caja12kg * 12);
+            totalKilosEl.textContent = totalKilos;
+
+            const kilosRestantes = parseInt(buyButton.dataset.kilosRestantes, 10);
+            const precioPorKiloWei = ethers.BigNumber.from(buyButton.dataset.precioKiloWei);
+            
+            const stockInsuficiente = totalKilos > kilosRestantes;
+            stockWarningEl.style.display = stockInsuficiente ? 'block' : 'none';
+
+            const selectedToken = tokenSelector.value;
+            const rate = exchangeRates[selectedToken];
+            const costeTotalWei = precioPorKiloWei.mul(totalKilos);
+            const costeTotalToken = ethers.utils.formatEther(costeTotalWei);
+            const costeTotalEur = (costeTotalToken * rate).toFixed(2);
+            
+            costoTotalEl.textContent = `${parseFloat(costeTotalToken).toFixed(6)} ${selectedToken}`;
+            costoTotalEurEl.textContent = `~${costeTotalEur}€`;
+
+            const canBuy = totalKilos > 0 && !stockInsuficiente;
+            buyButton.disabled = !canBuy;
+            if (canBuy) {
+                // CAMBIO: Lógica actualizada para incluir USDT
+                if (selectedToken === 'USDC' || selectedToken === 'USDT') {
+                    buyButton.textContent = `Pago con ${selectedToken} no soportado`;
+                    buyButton.disabled = true;
+                } else {
+                    buyButton.textContent = 'Comprar Kilos';
+                }
+            } else {
+                buyButton.textContent = totalKilos === 0 ? 'Selecciona una cantidad' : 'Stock Insuficiente';
+            }
+            // Override if contract is paused
+            if (contractIsPaused) {
+                buyButton.disabled = true;
+                buyButton.textContent = 'Contrato en Pausa';
+            }
+        }
+        
+        function updateAllCardsForTokenChange() {
+             document.querySelectorAll('.card[id^="lote-"]').forEach(card => {
+                const loteId = card.id.split('-')[1];
+                updateTotalCost(loteId);
+                const precioKiloWei = ethers.BigNumber.from(card.querySelector('.buy-button').dataset.precioKiloWei);
+                const precioKiloEl = card.querySelector(`#precio-kilo-${loteId}`);
+                const selectedToken = tokenSelector.value;
+                const rate = exchangeRates[selectedToken];
+                const precioPorKiloEth = ethers.utils.formatEther(precioKiloWei);
+                const precioPorKiloEur = (precioPorKiloEth * rate).toFixed(2);
+                precioKiloEl.innerHTML = `${parseFloat(precioPorKiloEth).toFixed(4)} ${selectedToken} (~${precioPorKiloEur}€)`;
+            });
+        }
+
+        function showPurchasePreview(loteId, purchaseDetails) {
+            modalContent.innerHTML = `
+                <h3 class="text-2xl font-bold mb-4">Confirmar Compra</h3>
+                <p class="mb-2">Estás a punto de comprar del <strong>Lote #${loteId}</strong>:</p>
+                <ul class="list-disc list-inside mb-4 bg-gray-50 p-3 rounded-md">
+                    ${purchaseDetails.items.map(item => `<li>${item.name}: ${item.quantity}</li>`).join('')}
+                </ul>
+                <div class="text-lg font-semibold">
+                    <p>Total Kilos: ${purchaseDetails.totalKilos} Kg</p>
+                    <p>Coste Total: ${purchaseDetails.costeTotalToken} ${purchaseDetails.selectedToken} (~${purchaseDetails.costeTotalEur}€)</p>
+                </div>
+                <div class="mt-6 flex justify-end gap-4">
+                    <button id="cancelPurchaseBtn" class="btn-primary btn-secondary">Cancelar</button>
+                    <button id="confirmPurchaseBtn" class="btn-primary">Confirmar y Pagar</button>
+                </div>
+            `;
+            modal.classList.add('show');
+
+            document.getElementById('cancelPurchaseBtn').onclick = () => modal.classList.remove('show');
+            document.getElementById('confirmPurchaseBtn').onclick = () => {
+                modal.classList.remove('show');
+                executePurchase(loteId, purchaseDetails.totalKilos, purchaseDetails.costeTotalWei);
+            };
+        }
+
+        async function executePurchase(loteId, totalKilos, costeTotalWei) {
+            const card = document.getElementById(`lote-${loteId}`);
+            const button = card.querySelector('.buy-button');
+            button.disabled = true;
+            button.innerHTML = `<div class="loader h-6 w-6 mx-auto border-2"></div>`;
+
+            try {
+                const tx = await contract.comprarKilos(loteId, totalKilos, { value: costeTotalWei });
+                showToast("Enviando transacción...", "success");
+                await tx.wait();
+                showToast("¡Compra realizada con éxito!", "success");
+                
+                card.querySelectorAll('.purchase-input').forEach(input => input.value = '');
+                const nuevosKilos = parseInt(button.dataset.kilosRestantes, 10) - totalKilos;
+                button.dataset.kilosRestantes = nuevosKilos;
+                updateTotalCost(loteId);
+                
+                const imageUrl = card.querySelector('.card-image').dataset.ipfsSrc;
+                showTicketModal({
+                    loteId,
+                    totalKilos,
+                    costeTotalEur: (ethers.utils.formatEther(costeTotalWei) * exchangeRates[tokenSelector.value]).toFixed(2),
+                    imageUrl
+                });
+
+            } catch (error) {
+                console.error("Error en la compra:", error);
+                const errorMessage = error.code === 'ACTION_REJECTED' ? "Transacción rechazada." : (error.reason || error.message || "Error al realizar la compra.");
+                showToast(errorMessage, "error");
+            } finally {
+                updateTotalCost(loteId);
+            }
+        }
+
+        function showTicketModal(ticketData) {
+            modalContent.innerHTML = `
+                <h3 class="text-2xl font-bold mb-4 text-center">¡Tu Ticket de Compra!</h3>
+                <canvas id="ticketCanvas" width="500" height="500" class="w-full h-auto border rounded-md"></canvas>
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button id="downloadPngBtn" class="btn-primary">Descargar Imagen (PNG)</button>
+                    <button id="downloadPdfBtn" class="btn-primary">Descargar PDF</button>
+                </div>
+                <div class="mt-4">
+                    <button id="mintNftBtn" class="w-full btn-primary btn-secondary" disabled>Mintear Ticket como NFT (Próximamente)</button>
+                </div>
+                 <button id="closeTicketModalBtn" class="mt-4 w-full text-gray-600">Cerrar</button>
+            `;
+            modal.classList.add('show');
+            
+            generateTicketOnCanvas('ticketCanvas', ticketData);
+
+            document.getElementById('downloadPngBtn').onclick = () => {
+                const canvas = document.getElementById('ticketCanvas');
+                const link = document.createElement('a');
+                link.download = `ticket-miel-lote-${ticketData.loteId}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            };
+            document.getElementById('downloadPdfBtn').onclick = () => {
+                 const canvas = document.getElementById('ticketCanvas');
+                 const imgData = canvas.toDataURL('image/png');
+                 const pdf = new jsPDF({orientation: 'p', unit: 'px', format: [500, 500]});
+                 pdf.addImage(imgData, 'PNG', 0, 0, 500, 500);
+                 pdf.save(`ticket-miel-lote-${ticketData.loteId}.pdf`);
+            };
+            document.getElementById('closeTicketModalBtn').onclick = () => modal.classList.remove('show');
+        }
+
+        function generateTicketOnCanvas(canvasId, data) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            const baseImage = new Image();
+            baseImage.crossOrigin = "Anonymous";
+            baseImage.src = data.imageUrl;
+
+            baseImage.onload = () => {
+                ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 40px Inter';
+                ctx.fillText('Ticket de Compra', canvas.width / 2, 80);
+                ctx.font = '24px Inter';
+                ctx.fillText(`Lote #${data.loteId}`, canvas.width / 2, 180);
+                ctx.fillText(`Kilos: ${data.totalKilos} Kg`, canvas.width / 2, 240);
+                ctx.font = 'bold 30px Inter';
+                ctx.fillStyle = '#FBBF24';
+                ctx.fillText(`Coste: ${data.costeTotalEur}€`, canvas.width / 2, 320);
+                ctx.font = '14px Inter';
+                ctx.fillStyle = 'white';
+                ctx.fillText('Gracias por su compra en Tienda de Miel', canvas.width / 2, 450);
+            };
+            baseImage.onerror = () => {
+                ctx.fillStyle = '#FFFBEB';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#D97706';
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 20px Inter';
+                ctx.fillText('No se pudo cargar la imagen del lote.', canvas.width / 2, 50);
+                ctx.fillStyle = 'black';
+                ctx.font = 'bold 40px Inter';
+                ctx.fillText('Ticket de Compra', canvas.width / 2, 120);
+            }
+        }
+
+        async function loadPastPurchases() {
+            purchasesLoader.style.display = 'flex';
+            purchasesList.innerHTML = '';
+            noPurchases.style.display = 'none';
+            try {
+                const readProvider = provider || new ethers.providers.Web3Provider(window.ethereum);
+                const readContract = new ethers.Contract(contractAddress, contractABI, readProvider);
+                const filter = readContract.filters.VentaRegistrada();
+                const events = await readContract.queryFilter(filter, 0, 'latest');
+                purchasesLoader.style.display = 'none';
+                if (events.length === 0) {
+                    noPurchases.style.display = 'block';
+                } else {
+                    purchasesList.innerHTML = '';
+                    events.sort((a, b) => b.blockNumber - a.blockNumber).forEach(event => addPurchaseToList(event.args));
+                }
+            } catch (error) {
+                console.error("Error cargando compras:", error);
+                purchasesLoader.style.display = 'none';
+                purchasesList.innerHTML = `<p class="text-red-500 text-center">No se pudieron cargar las compras.</p>`;
+            }
+        }
+
+        function listenForNewPurchases() {
+            if (!contract) return;
+            contract.removeAllListeners('VentaRegistrada');
+            
+            contract.on('VentaRegistrada', (ventaId, loteId, comprador, kilosComprados, costeTotal, event) => {
+                showToast(`Nueva compra de ${kilosComprados.toNumber()}kg del lote #${loteId.toNumber()}`, "success");
+                addPurchaseToList({ ventaId, loteId, comprador, kilosComprados, costeTotal }, true);
+                const card = document.getElementById(`lote-${loteId.toNumber()}`);
+                if (card) {
+                    const button = card.querySelector('.buy-button');
+                    const nuevosKilos = parseInt(button.dataset.kilosRestantes, 10) - kilosComprados.toNumber();
+                    button.dataset.kilosRestantes = nuevosKilos;
+                    card.querySelector(`#kilos-restantes-${loteId.toNumber()}`).textContent = `${nuevosKilos} Kg`;
+                    if (nuevosKilos === 0) {
+                         card.style.opacity = '0.5';
+                         card.style.pointerEvents = 'none';
+                    }
+                }
+            });
+        }
+
+        function addPurchaseToList(data, prepend = false) {
+            const existingEntry = document.getElementById(`venta-${data.ventaId.toNumber()}`);
+            if (existingEntry) return;
+
+            noPurchases.style.display = 'none';
+            const item = document.createElement('div');
+            item.id = `venta-${data.ventaId.toNumber()}`;
+            item.className = 'p-3 bg-amber-50 rounded-lg border border-amber-200 text-sm';
+            const addressShort = `${data.comprador.substring(0, 6)}...${data.comprador.substring(data.comprador.length - 4)}`;
+            const costeEth = ethers.utils.formatEther(data.costeTotal);
+            const costeEur = (costeEth * exchangeRates.MATIC).toFixed(2);
+            item.innerHTML = `
+                <p class="font-bold">Venta #${data.ventaId.toNumber()}</p>
+                <div class="text-xs text-gray-500 mt-1 mb-2">Comprador: ${addressShort}</div>
+                <div class="space-y-1">
+                    <div class="flex justify-between"><span>Lote:</span> <strong>#${data.loteId.toNumber()}</strong></div>
+                    <div class="flex justify-between"><span>Kilos:</span> <strong>${data.kilosComprados.toNumber()} Kg</strong></div>
+                    <div class="flex justify-between"><span>Coste:</span> <strong>${parseFloat(costeEth).toFixed(5)} MATIC (~${costeEur}€)</strong></div>
+                </div>
+            `;
+            if (prepend) purchasesList.prepend(item);
+            else purchasesList.appendChild(item);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            connectButton.addEventListener('click', connectWallet);
+            disconnectButton.addEventListener('click', disconnectWallet);
+            tokenSelector.addEventListener('change', updateAllCardsForTokenChange);
+            
+            lotesContainer.addEventListener('click', function(event) {
+                if (event.target.classList.contains('buy-button') && !event.target.disabled) {
+                    const button = event.target;
+                    const loteId = button.dataset.loteId;
+                    const card = document.getElementById(`lote-${loteId}`);
+                    const tarro1kg = parseInt(card.querySelector(`#tarro-1kg-${loteId}`).value, 10) || 0;
+                    const caja6kg = parseInt(card.querySelector(`#caja-6kg-${loteId}`).value, 10) || 0;
+                    const caja12kg = parseInt(card.querySelector(`#caja-12kg-${loteId}`).value, 10) || 0;
+                    const totalKilos = (tarro1kg * 1) + (caja6kg * 6) + (caja12kg * 12);
+                    const precioPorKiloWei = ethers.BigNumber.from(button.dataset.precioKiloWei);
+                    const costeTotalWei = precioPorKiloWei.mul(totalKilos);
+                    const selectedToken = tokenSelector.value;
+                    const rate = exchangeRates[selectedToken];
+
+                    showPurchasePreview(loteId, {
+                        items: [
+                            { name: 'Tarros de 1kg', quantity: tarro1kg },
+                            { name: 'Cajas de 6kg', quantity: caja6kg },
+                            { name: 'Cajas de 12kg', quantity: caja12kg }
+                        ].filter(item => item.quantity > 0),
+                        totalKilos,
+                        costeTotalWei,
+                        costeTotalToken: ethers.utils.formatEther(costeTotalWei),
+                        costeTotalEur: (ethers.utils.formatEther(costeTotalWei) * rate).toFixed(2),
+                        selectedToken
+                    });
+                }
+            });
+            
+            modal.addEventListener('click', function(event) {
+                if (event.target === modal) {
+                    modal.classList.remove('show');
+                }
+            });
+
+            if (typeof window.ethereum !== 'undefined' && window.ethereum.selectedAddress) {
+                connectWallet();
+            } else {
+                purchasesLoader.style.display = 'none';
+                noPurchases.textContent = 'Conecta tu wallet para ver el historial.';
+                noPurchases.style.display = 'block';
+            }
+
+            if (window.ethereum) {
+                window.ethereum.on('accountsChanged', (accounts) => {
+                    if (accounts.length > 0) {
+                        connectWallet();
+                    } else {
+                        disconnectWallet();
+                    }
+                });
+                window.ethereum.on('chainChanged', () => window.location.reload());
+            }
+        });
+    </script>
+</body>
+</html>
